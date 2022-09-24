@@ -48,6 +48,8 @@ var recordCmd = &cobra.Command{
 			panic(err)
 		}
 
+		argName, _ := cmd.PersistentFlags().GetString("name")
+
 		ext := filepath.Ext(args[0])
 		info := internal.FBFileInfo{}
 		info.Reserved1 = 0
@@ -64,8 +66,12 @@ var recordCmd = &cobra.Command{
 		}
 
 		tapeFileName := strings.TrimSuffix(filepath.Base(args[0]), ext)
-		if len(tapeFileName) < 13 && info.Type == internal.FileTypeBgGraphics && !strings.HasSuffix(tapeFileName, " BG") {
-			tapeFileName += " BG"
+		if len(argName) > 0 {
+			tapeFileName = argName
+		} else {
+			if len(tapeFileName) < 13 && info.Type == internal.FileTypeBgGraphics && !strings.HasSuffix(tapeFileName, " BG") {
+				tapeFileName += " BG"
+			}
 		}
 		info.SetName(tapeFileName)
 
@@ -88,16 +94,16 @@ var recordCmd = &cobra.Command{
 		}
 		defer tapeWriter.Close()
 
-		fbFile := internal.FBFile{Info: info}
 		if info.Length == 0 {
-			inpFileLen, err := inpFile.Seek(0, io.SeekEnd)
+			inpFileStat, err := inpFile.Stat()
 			if err != nil {
 				panic(err)
 			}
 
-			info.Length = uint16(inpFileLen)
+			info.Length = uint16(inpFileStat.Size())
 		}
 
+		fbFile := internal.FBFile{Info: info}
 		tapeWriter.WriteSilence(0.25)
 
 		buf := make([]byte, info.Length)
@@ -117,10 +123,13 @@ var recordCmd = &cobra.Command{
 				panic(err)
 			}
 		}
+
+		tapeWriter.WriteSilence(0.25)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(recordCmd)
 	recordCmd.PersistentFlags().IntP("rate", "r", 32000, "Audio frequency")
+	recordCmd.PersistentFlags().String("name", "", "Output file name")
 }

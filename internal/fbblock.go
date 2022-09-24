@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+	"strings"
 )
 
 type RawBlockType uint8
@@ -84,7 +85,7 @@ func (i FBFileInfo) NameStr() string {
 }
 
 func (i *FBFileInfo) SetName(s string) {
-	v, _ := FBStringToBytes(s)
+	v, _ := FBStringToBytes(strings.ToUpper(s))
 	copy(i.Name[:], v)
 }
 
