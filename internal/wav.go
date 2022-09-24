@@ -20,22 +20,20 @@ const (
 )
 
 type TapeEncodingInfo struct {
-	CyclesPerByte   int
-	ShortPulseWidth int
-	LongPulseWidth  int
-	SyncPulseCount  int
-	PulseTolerance  float32
-	SyncTolerance   float32
+	CyclesPerByte     int
+	ShortPulseWidth   int
+	LongPulseWidth    int
+	SyncMinPulseCount int
+	PulseTolerance    float32
 }
 
 func NewTapeEncodingInfo() TapeEncodingInfo {
 	return TapeEncodingInfo{
-		CyclesPerByte:   45,
-		ShortPulseWidth: 20,
-		LongPulseWidth:  40,
-		SyncPulseCount:  20000,
-		PulseTolerance:  1.25,
-		SyncTolerance:   1.2,
+		CyclesPerByte:     45,
+		ShortPulseWidth:   20,
+		LongPulseWidth:    40,
+		SyncMinPulseCount: 5000,
+		PulseTolerance:    1.375,
 	}
 }
 
@@ -67,9 +65,7 @@ type TapeReader struct {
 	encInfo           TapeEncodingInfo
 	buffer            *audio.IntBuffer
 	audioSampleOffset int
-
-	// hacks...
-	peekedBit byte
+	peekedBit         byte
 }
 
 func NewTapeReader(reader io.ReadSeeker, encInfo TapeEncodingInfo) (*TapeReader, error) {
@@ -108,7 +104,7 @@ func (reader *TapeReader) nextPulse() (int64, error) {
 	pos := int64(0)
 	stage := 0
 
-	prevSample := 0
+	prevSample := -1000000
 
 	for {
 		count, err := reader.wav.PCMBuffer(reader.buffer)
@@ -124,20 +120,16 @@ func (reader *TapeReader) nextPulse() (int64, error) {
 
 		pos += 1
 
-		if prevSample < 0 && sample > 0 {
-			stage += 1
-			if stage == 1 {
-				pos = 0
-			}
-		} else if prevSample > 0 && sample < 0 {
-			stage += 1
-			if stage == 1 {
-				pos = 0
+		if prevSample != -1000000 {
+			if prevSample < 0 && sample >= 0 {
+				stage += 1
+			} else if prevSample >= 0 && sample < 0 {
+				stage += 1
 			}
 		}
 
 		if stage >= 2 {
-			return pos * 2, nil
+			return pos, nil
 		}
 
 		prevSample = sample
@@ -151,9 +143,9 @@ func (reader *TapeReader) RewindBit(bit byte) {
 
 func (reader *TapeReader) NextBit() (byte, error) {
 	if reader.peekedBit != 255 {
-		bit := reader.peekedBit
+		v := reader.peekedBit
 		reader.peekedBit = 255
-		return bit, nil
+		return v, nil
 	}
 	pulse, err := reader.nextPulse()
 	if err != nil {
@@ -211,6 +203,18 @@ func (reader *TapeReader) NextByte() (byte, error) {
 	return v, nil
 }
 
+func (reader *TapeReader) NextWord() (uint16, error) {
+	b1, err := reader.NextByte()
+	if err != nil {
+		return 0, fmt.Errorf("could not read low word: %v", err)
+	}
+	b2, err := reader.NextByte()
+	if err != nil {
+		return 0, fmt.Errorf("could not read high word: %v", err)
+	}
+	return uint16(b2) | (uint16(b1) << 8), nil
+}
+
 func (reader *TapeReader) NextBytes(len int) ([]byte, error) {
 	buffer := make([]byte, len)
 	for i := 0; i < len; i++ {
@@ -223,8 +227,87 @@ func (reader *TapeReader) NextBytes(len int) ([]byte, error) {
 	return buffer, nil
 }
 
-func (reader *TapeReader) SyncToBlock() (BlockType, error) {
-	// 0 x ~20000 -> 1 x N -> 0 x N
+func (reader *TapeReader) NextBytesWithChecksum(len int) ([]byte, uint16, error) {
+	data, err := reader.NextBytes(len)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	checksum, err := reader.NextWord()
+	if err != nil {
+		return data, 0, err
+	}
+
+	return data, checksum, nil
+}
+
+func checkChecksumAndPrint(data []byte, name string, checksum uint16) {
+	actualChecksum := CalcDataChecksum(data)
+	if actualChecksum != checksum {
+		fmt.Printf("warning: block %s has invalid checksum %d != %d\n", name, checksum, actualChecksum)
+	}
+}
+
+func (reader *TapeReader) NextFile() (*FBFile, error) {
+	blockType, err := reader.SyncToBlock()
+	if err != nil {
+		return nil, fmt.Errorf("block sync error: %v", err)
+	}
+	if blockType != RawBlockInfo {
+		return nil, errors.New("invalid block type (expected information)")
+	}
+
+	err = reader.VerifyBit(1)
+	if err != nil {
+		return nil, fmt.Errorf("block prelude error: %v", err)
+	}
+
+	fbInfoData, fbInfoChecksum, err := reader.NextBytesWithChecksum(128)
+	if err != nil {
+		return nil, fmt.Errorf("block read error: %v", err)
+	}
+	checkChecksumAndPrint(fbInfoData, "information", fbInfoChecksum)
+
+	err = reader.VerifyBit(1)
+	if err != nil {
+		return nil, fmt.Errorf("block postlude error: %v", err)
+	}
+
+	fbInfo := FBFileInfo{}
+	fbInfo.UnmarshalBinary(fbInfoData)
+
+	blockType, err = reader.SyncToBlock()
+	if err != nil {
+		return nil, fmt.Errorf("block sync error: %v", err)
+	}
+	if blockType != RawBlockData {
+		return nil, errors.New("invalid block type (expected data)")
+	}
+
+	err = reader.VerifyBit(1)
+	if err != nil {
+		return nil, fmt.Errorf("block prelude error: %v", err)
+	}
+
+	fbDataData, fbDataChecksum, err := reader.NextBytesWithChecksum(int(fbInfo.Length))
+	if err != nil {
+		return nil, fmt.Errorf("block read error: %v", err)
+	}
+	checkChecksumAndPrint(fbDataData, "data", fbDataChecksum)
+
+	// don't check the final postlude
+	/* err = reader.VerifyBit(1)
+	if err != nil {
+		return nil, fmt.Errorf("block postlude error: %v", err)
+	} */
+
+	return &FBFile{
+		Info: fbInfo,
+		Data: fbDataData,
+	}, nil
+}
+
+func (reader *TapeReader) SyncToBlock() (RawBlockType, error) {
 	state := 0
 	currentBit := uint8(255)
 	bitCount := 0
@@ -234,7 +317,7 @@ func (reader *TapeReader) SyncToBlock() (BlockType, error) {
 	for {
 		bit, err := reader.NextBit()
 		if err != nil {
-			return BlockUnknown, fmt.Errorf("could not find synchronization signal: %v", err)
+			return RawBlockUnknown, fmt.Errorf("could not find synchronization signal: %v", err)
 		} else if bit == 255 {
 			continue
 		}
@@ -243,9 +326,10 @@ func (reader *TapeReader) SyncToBlock() (BlockType, error) {
 			bitCount++
 		} else {
 			reader.RewindBit(bit)
+			// fmt.Printf("sync: read %d x %d\n", currentBit, bitCount)
 			switch state {
 			case 0: /* syncing */
-				if currentBit == 0 && bitCount >= int(float32(reader.encInfo.SyncPulseCount)/reader.encInfo.PulseTolerance) && bitCount <= int(float32(reader.encInfo.SyncPulseCount)*reader.encInfo.PulseTolerance) {
+				if currentBit == 0 && bitCount >= reader.encInfo.SyncMinPulseCount {
 					state = 1
 				}
 			case 1: /* 1 */
@@ -254,17 +338,68 @@ func (reader *TapeReader) SyncToBlock() (BlockType, error) {
 			case 2: /* 0 */
 				secondBitCount = bitCount
 				if firstBitCount != secondBitCount {
-					return BlockUnknown, fmt.Errorf("bit count mismatch on block type (%d != %d)", firstBitCount, secondBitCount)
+					return RawBlockUnknown, fmt.Errorf("bit count mismatch on block type (%d != %d)", firstBitCount, secondBitCount)
 				} else if firstBitCount == 40 {
-					return BlockInformation, nil
+					return RawBlockInfo, nil
 				} else if firstBitCount == 20 {
-					return BlockData, nil
+					return RawBlockData, nil
 				} else {
-					return BlockUnknown, fmt.Errorf("could not recognize block type (%d)", firstBitCount)
+					return RawBlockUnknown, fmt.Errorf("could not recognize block type (%d)", firstBitCount)
 				}
 			}
 			bitCount = 0
 			currentBit = bit
 		}
+	}
+}
+
+type TapeWriter struct {
+	writer      io.WriteSeeker
+	wav         *wav.Encoder
+	encInfo     TapeEncodingInfo
+	freqResidue float64
+}
+
+func NewTapeWriter(writer io.WriteSeeker, encInfo TapeEncodingInfo, frequency int) (*TapeWriter, error) {
+	tapeWriter := TapeWriter{
+		writer:  writer,
+		encInfo: encInfo,
+	}
+
+	wav := wav.NewEncoder(writer, frequency, 8, 1, 0x1)
+	tapeWriter.wav = wav
+
+	return &tapeWriter, nil
+}
+
+func (writer *TapeWriter) WriteSilence(length float64) error {
+	samples := int(length * float64(writer.wav.SampleRate))
+	for i := 0; i < samples; i++ {
+		writer.wav.AddLE(128)
+	}
+	return nil
+}
+
+func (writer *TapeWriter) WritePulse(length int) error {
+	samplesF := writer.freqResidue + (float64(length) * float64(writer.wav.SampleRate) / writer.encInfo.TapeFrequency())
+	samples := int(samplesF)
+	writer.freqResidue = samplesF - float64(samples)
+
+	for i := 0; i < samples; i++ {
+		writer.wav.AddLE(96)
+	}
+	for i := 0; i < samples; i++ {
+		writer.wav.AddLE(160)
+	}
+	return nil
+}
+
+func (writer *TapeWriter) WriteBit(bit byte) error {
+	if bit == 0 {
+		return writer.WritePulse(writer.encInfo.ShortPulseWidth)
+	} else if bit == 1 {
+		return writer.WritePulse(writer.encInfo.LongPulseWidth)
+	} else {
+		return fmt.Errorf("unknown bit: %d", bit)
 	}
 }

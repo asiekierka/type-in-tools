@@ -6,6 +6,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/asiekierka/fbastool/internal"
 	"github.com/spf13/cobra"
@@ -15,13 +17,37 @@ import (
 var wavCmd = &cobra.Command{
 	Use:   "wav",
 	Short: "Convert WAV files to/from binary data",
-	Args:  cobra.ExactArgs(1),
+	Long: `Convert WAV files to/from binary data.
+	
+To decode, run "wav [-d] file.wav [output dir]".
+To encode, run "wav -e file.wav [binary files/directories...]".`,
+	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runWav(args[0])
+		encMode, err := cmd.PersistentFlags().GetBool("encode")
+		if err != nil {
+			panic(err)
+		}
+
+		if encMode {
+
+		} else {
+			if len(args) > 2 {
+				panic(fmt.Errorf("specified %d args, expected at most 2", len(args)))
+			}
+
+			outPath := ""
+			if len(args) >= 2 {
+				outPath = args[1]
+			} else {
+				outPath = "."
+			}
+
+			wavToBin(args[0], outPath)
+		}
 	},
 }
 
-func runWav(filename string) {
+func wavToBin(filename string, outPath string) {
 	fp, err := os.Open(filename)
 	if err != nil {
 		panic(err)
@@ -33,56 +59,57 @@ func runWav(filename string) {
 		panic(err)
 	}
 
+	var files []*internal.FBFile
+	filesByFilename := make(map[string][]*internal.FBFile)
+
 	for {
-		blockType, err := tapeReader.SyncToBlock()
+		file, err := tapeReader.NextFile()
 		if err != nil {
-			fmt.Println("block sync error:", err)
+			fmt.Println(err)
 			break
 		}
-		fmt.Println(blockType)
-
-		err = tapeReader.VerifyBit(1)
-		if err != nil {
-			fmt.Println("block prelude error:", err)
-			break
-		}
-
-		blockData, err := tapeReader.NextBytes(128)
-		if err != nil {
-			fmt.Println("block read error:", err)
-			break
-		}
-		fmt.Println(blockData)
+		files = append(files, file)
+		filename := file.Info.NameStr()
+		filesByFilename[filename] = append(filesByFilename[filename], file)
 	}
 
-	/* pulseLast := uint8(0)
-	pulseCount := 0
+	fmt.Printf("found %d files\n", len(files))
+	for filename, files := range filesByFilename {
+		for i, file := range files {
+			fmt.Printf("- %s (%v, %d bytes)\n", file.Info.NameStr(), file.Info.Type, file.Info.Length)
 
-	for {
-		pulseBit, err := tapeReader.NextBit()
-		if err != nil {
-			break
+			suffix := ".bin"
+			if file.Info.Type == internal.FileTypeBasic {
+				suffix = ".prg"
+			} else if file.Info.Type == internal.FileTypeBgGraphics {
+				suffix = ".gfx"
+			}
+			if len(files) >= 2 {
+				suffix = "_" + strconv.Itoa(i) + suffix
+			}
+
+			f, err := os.Create(filepath.Join(outPath, filename+suffix))
+			if err != nil {
+				panic(err)
+			}
+			f.Write(file.Data)
+			f.Close()
+
+			f, err = os.Create(filepath.Join(outPath, filename+suffix+".info"))
+			if err != nil {
+				panic(err)
+			}
+			infoBytes, err := file.Info.MarshalBinary()
+			if err != nil {
+				panic(err)
+			}
+			f.Write(infoBytes)
+			f.Close()
 		}
-		if pulseBit == pulseLast {
-			pulseCount++
-		} else {
-			fmt.Printf("read %d x %d\n", pulseBit, pulseCount+1)
-			pulseLast = pulseBit
-			pulseCount = 0
-		}
-	} */
+	}
 }
 
 func init() {
 	rootCmd.AddCommand(wavCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// wavCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// wavCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	wavCmd.PersistentFlags().BoolP("encode", "e", false, "Encoding mode")
 }
