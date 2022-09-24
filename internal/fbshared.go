@@ -23,6 +23,8 @@ package internal
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/ktnyt/go-moji"
 )
 
 var nameHighToChar = []rune("「￥」^_アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワンヲァィゥェォャュョッガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポ□▫[]Ⓒ×÷")
@@ -75,8 +77,14 @@ func init() {
 	for i := 0; i < 0x100; i++ {
 		s := FBByteToString(byte(i))
 		stringToChar[s] = byte(i)
+		hs := moji.Convert(s, moji.ZK, moji.HK)
+		if hs != s {
+			stringToChar[hs] = byte(i)
+		}
 		if len(s) > stringToCharMax {
 			stringToCharMax = len(s)
 		}
 	}
+
+	stringToChar["ー"] = '-'
 }
