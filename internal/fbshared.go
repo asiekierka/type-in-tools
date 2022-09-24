@@ -37,7 +37,7 @@ func FBByteToString(c byte) string {
 	} else if c >= 0x5B && int(c) < (0x5B+len(nameHighToChar)) {
 		return string(nameHighToChar[c-0x5B])
 	} else if c >= 0xB8 {
-		return fmt.Sprintf("\\%c%d", ((c-0xB8)>>3)+'D', (c & 7))
+		return fmt.Sprintf("\\%c%d", ((c-0xB8)>>3)+'E', (c & 7))
 	} else if c == 0xB7 {
 		return "\\xB7"
 	} else {
