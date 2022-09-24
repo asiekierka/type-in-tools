@@ -18,42 +18,53 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package internal
+package cmd
 
 import (
+	"bufio"
 	"bytes"
-	"strings"
-	"testing"
+	"fmt"
+	"os"
+
+	"github.com/asiekierka/fbastool/internal"
+	"github.com/spf13/cobra"
 )
 
-var enriExampleText = `
-10 FOR I=0 TO 10
-20 PRINT "TEST ";
-30 NEXT
-`
-var enriExampleBin = []byte{
-	0x11,
-	0x0A, 0x00,
-	0x8C, 0x20, 0x49, 0xF6, 0x12, 0x00, 0x00, 0x20, 0x88, 0x20, 0x12, 0x0A, 0x00,
-	0x00,
-
-	0x0E,
-	0x14, 0x00,
-	0x8B, 0x20, 0x22, 0x54, 0x45, 0x53, 0x54, 0x20, 0x22, 0x3B,
-	0x00,
-
-	0x05,
-	0x1E, 0x00,
-	0x8D,
-	0x00,
+// testBasicCmd represents the testBasic command
+var testBasicCmd = &cobra.Command{
+	Use:   "testBasic",
+	Short: "Round-trip convert binary -> text -> binary",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		origProgBin, err := os.ReadFile(args[0])
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("binary -> text\n")
+		progString, err := internal.FBBasicBinToString(bytes.NewReader(origProgBin))
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%s", progString)
+		fmt.Printf("text -> binary\n")
+		var buf bytes.Buffer
+		w := bufio.NewWriter(&buf)
+		err = internal.FBBasicStringToBin(progString, w)
+		if err != nil {
+			panic(err)
+		}
+		w.Flush()
+		progBin := buf.Bytes()
+		if !bytes.Equal(origProgBin, progBin) {
+			fmt.Printf("Fail\n")
+			os.WriteFile("test.orig", origProgBin, 0644)
+			os.WriteFile("test.new", progBin, 0644)
+		} else {
+			fmt.Printf("Success\n")
+		}
+	},
 }
 
-func TestEnriString(t *testing.T) {
-	enriGeneratedText, err := FBBasicBinToString(bytes.NewReader(enriExampleBin))
-	if err != nil {
-		t.Error(err)
-	}
-	if strings.TrimSpace(enriGeneratedText) != strings.TrimSpace(enriExampleText) {
-		t.Errorf("mismatch\nexpected:\n%s\n\nactual:\n%s", enriExampleText, enriGeneratedText)
-	}
+func init() {
+	rootCmd.AddCommand(testBasicCmd)
 }
