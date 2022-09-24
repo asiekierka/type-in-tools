@@ -58,7 +58,7 @@ func bgeditLoop() {
 			bgCell.ix = ix
 			bgCell.iy = iy
 			bgCell.value = nametable.GetString(bgCell.ix, bgCell.iy)
-			bgCell.widget = g.InputText(&bgCell.value).Size(100).Flags(g.InputTextFlagsEnterReturnsTrue).OnChange(func() {
+			bgCell.widget = g.InputText(&bgCell.value).Size(100).Flags(0).OnChange(func() {
 				fmt.Printf("setting %d %d to %s\n", bgCell.ix, bgCell.iy, bgCell.value)
 				nametable.PutString(bgCell.ix, bgCell.iy, strings.TrimSpace(bgCell.value))
 				bgCell.value = nametable.GetString(bgCell.ix, bgCell.iy)

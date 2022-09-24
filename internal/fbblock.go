@@ -84,7 +84,7 @@ func (i FBFileInfo) NameStr() string {
 }
 
 func (i *FBFileInfo) SetName(s string) {
-	v := FBStringToBytes(s)
+	v, _ := FBStringToBytes(s)
 	copy(i.Name[:], v)
 }
 

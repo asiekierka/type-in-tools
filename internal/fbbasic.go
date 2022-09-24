@@ -303,13 +303,21 @@ func FBBasicStringToBin(s string, writer io.Writer) error {
 				s = s[prefixLen:]
 				if currKeyword == "REM" || currKeyword == "DATA" {
 					// comment
-					lineBuf.Write(FBStringToBytes(s))
+					sParsed, err := FBStringToBytes(s)
+					if err != nil {
+						return err
+					}
+					lineBuf.Write(sParsed)
 					break
 				}
 				readingLineNumbers = (currKeyword == "GOSUB" || currKeyword == "GOTO" || currKeyword == "RETURN" || currKeyword == "RESTORE" || currKeyword == "RUN" || currKeyword == "THEN")
 			} else if s[0] == '\'' {
 				// comment
-				lineBuf.Write(FBStringToBytes(s))
+				sParsed, err := FBStringToBytes(s)
+				if err != nil {
+					return err
+				}
+				lineBuf.Write(sParsed)
 				break
 			} else if s[0] == '"' {
 				// string
@@ -317,10 +325,18 @@ func FBBasicStringToBin(s string, writer io.Writer) error {
 				s = s[1:]
 				splitPos := strings.Index(s, "\"")
 				if splitPos < 0 {
-					lineBuf.Write(FBStringToBytes(s))
+					sParsed, err := FBStringToBytes(s)
+					if err != nil {
+						return err
+					}
+					lineBuf.Write(sParsed)
 					break
 				} else {
-					lineBuf.Write(FBStringToBytes(s[0 : splitPos+1]))
+					sParsed, err := FBStringToBytes(s[0 : splitPos+1])
+					if err != nil {
+						return err
+					}
+					lineBuf.Write(sParsed)
 				}
 				s = s[splitPos+1:]
 			} else if !lastAlpha && (s[0] >= '0' && s[0] <= '9' || (len(s) >= 2 && s[0] == '-' && s[1] >= '0' && s[1] <= '9')) {

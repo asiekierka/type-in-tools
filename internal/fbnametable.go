@@ -128,7 +128,11 @@ func (f *FBNameTable) PutString(x, y int, tileString string) {
 		}
 	} else {
 		// text mode
-		tile = FBStringToBytes(tileString)[0]
+		tileBytes, err := FBStringToBytes(tileString)
+		if err != nil || len(tileBytes) <= 0 {
+			return
+		}
+		tile = tileBytes[0]
 	}
 
 	f.Tiles[ny*32+nx] = tile

@@ -45,7 +45,7 @@ func FBByteToString(c byte) string {
 	}
 }
 
-func FBStringToBytes(s string) []byte {
+func FBStringToBytes(s string) ([]byte, error) {
 	var buf bytes.Buffer
 
 	for len(s) > 0 {
@@ -53,17 +53,22 @@ func FBStringToBytes(s string) []byte {
 		if maxLen > stringToCharMax {
 			maxLen = stringToCharMax
 		}
+		found := false
 		for i := maxLen; i > 0; i-- {
 			v, ok := stringToChar[s[0:i]]
 			if ok {
 				buf.WriteByte(v)
 				s = s[i:]
+				found = true
 				break
 			}
 		}
+		if !found {
+			return buf.Bytes(), fmt.Errorf("cannot translate from '%s'", s)
+		}
 	}
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 func init() {
