@@ -30,41 +30,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// wavCmd represents the wav command
-var wavCmd = &cobra.Command{
-	Use:   "wav",
-	Short: "Convert WAV files to/from binary data",
-	Long: `Convert WAV files to/from binary data.
-	
-To decode, run "wav [-d] file.wav [output dir]".
-To encode, run "wav -e file.wav [binary files/directories...]".`,
-	Args: cobra.MinimumNArgs(1),
+// playCmd represents the wav command
+var playCmd = &cobra.Command{
+	Use:   "play",
+	Short: "Convert WAV files to binary data",
+	Args:  cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
-		encMode, err := cmd.PersistentFlags().GetBool("encode")
+		rawMode, err := cmd.PersistentFlags().GetBool("raw")
 		if err != nil {
 			panic(err)
 		}
 
-		if encMode {
-			panic(fmt.Errorf("TODO"))
+		outPath := ""
+		if len(args) >= 2 {
+			outPath = args[1]
 		} else {
-			if len(args) > 2 {
-				panic(fmt.Errorf("specified %d args, expected at most 2", len(args)))
-			}
-
-			outPath := ""
-			if len(args) >= 2 {
-				outPath = args[1]
-			} else {
-				outPath = "."
-			}
-
-			wavToBin(args[0], outPath)
+			outPath = "."
 		}
+
+		wavToBin(args[0], outPath, rawMode)
 	},
 }
 
-func wavToBin(filename string, outPath string) {
+func wavToBin(filename string, outPath string, rawMode bool) {
 	fp, err := os.Open(filename)
 	if err != nil {
 		panic(err)
@@ -90,43 +78,64 @@ func wavToBin(filename string, outPath string) {
 		filesByFilename[filename] = append(filesByFilename[filename], file)
 	}
 
-	fmt.Printf("found %d files\n", len(files))
+	if !rawMode {
+		fmt.Printf("found %d files\n", len(filesByFilename))
+	} else {
+		fmt.Printf("found %d files\n", len(files))
+	}
 	for filename, files := range filesByFilename {
-		for i, file := range files {
-			fmt.Printf("- %s (%v, %d bytes)\n", file.Info.NameStr(), file.Info.Type, file.Info.Length)
+		globalSuffix := ".bin"
+		if files[0].Info.Type == internal.FileTypeBasic {
+			globalSuffix = ".prg"
+		} else if files[0].Info.Type == internal.FileTypeBgGraphics {
+			globalSuffix = ".gfx"
+		}
 
-			suffix := ".bin"
-			if file.Info.Type == internal.FileTypeBasic {
-				suffix = ".prg"
-			} else if file.Info.Type == internal.FileTypeBgGraphics {
-				suffix = ".gfx"
-			}
-			if len(files) >= 2 {
-				suffix = "_" + strconv.Itoa(i) + suffix
-			}
+		if !rawMode {
+			fmt.Printf("- %s (%v)\n", files[0].Info.NameStr(), files[0].Info.Type)
 
-			f, err := os.Create(filepath.Join(outPath, filename+suffix))
+			f, err := os.Create(filepath.Join(outPath, filename+globalSuffix))
 			if err != nil {
 				panic(err)
 			}
-			f.Write(file.Data)
+
+			for _, file := range files {
+				f.Write(file.Data)
+			}
 			f.Close()
+		} else {
+			for i, file := range files {
+				fmt.Printf("- %s (%v, %d bytes)\n", file.Info.NameStr(), file.Info.Type, file.Info.Length)
 
-			f, err = os.Create(filepath.Join(outPath, filename+suffix+".info"))
-			if err != nil {
-				panic(err)
+				suffix := globalSuffix
+				if len(files) >= 2 {
+					suffix = "_" + strconv.Itoa(i) + suffix
+				}
+
+				f, err := os.Create(filepath.Join(outPath, filename+suffix))
+				if err != nil {
+					panic(err)
+				}
+				f.Write(file.Data)
+				f.Close()
+
+				f, err = os.Create(filepath.Join(outPath, filename+suffix+".info"))
+				if err != nil {
+					panic(err)
+				}
+				infoBytes, err := file.Info.MarshalBinary()
+				if err != nil {
+					panic(err)
+				}
+				f.Write(infoBytes)
+				f.Close()
 			}
-			infoBytes, err := file.Info.MarshalBinary()
-			if err != nil {
-				panic(err)
-			}
-			f.Write(infoBytes)
-			f.Close()
 		}
 	}
 }
 
 func init() {
-	rootCmd.AddCommand(wavCmd)
-	wavCmd.PersistentFlags().BoolP("encode", "e", false, "Encoding mode")
+	rootCmd.AddCommand(playCmd)
+	playCmd.PersistentFlags().BoolP("encode", "e", false, "Encoding mode")
+	playCmd.PersistentFlags().BoolP("raw", "r", false, "Store raw metadata and preserve split files")
 }

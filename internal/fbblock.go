@@ -83,6 +83,11 @@ func (i FBFileInfo) NameStr() string {
 	return s
 }
 
+func (i *FBFileInfo) SetName(s string) {
+	v := FBStringToBytes(s)
+	copy(i.Name[:], v)
+}
+
 func (i FBFileInfo) MarshalBinary() ([]byte, error) {
 	buf := make([]byte, 128)
 	buf[0] = byte(i.Type)

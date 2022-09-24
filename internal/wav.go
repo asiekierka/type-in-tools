@@ -224,7 +224,7 @@ func (reader *TapeReader) NextByte() (byte, error) {
 	return v, nil
 }
 
-func (reader *TapeReader) NextWord() (uint16, error) {
+func (reader *TapeReader) nextChecksumWord() (uint16, error) {
 	b1, err := reader.NextByte()
 	if err != nil {
 		return 0, fmt.Errorf("could not read low word: %v", err)
@@ -254,7 +254,7 @@ func (reader *TapeReader) NextBytesWithChecksum(len int) ([]byte, uint16, error)
 		return nil, 0, err
 	}
 
-	checksum, err := reader.NextWord()
+	checksum, err := reader.nextChecksumWord()
 	if err != nil {
 		return data, 0, err
 	}
@@ -377,6 +377,7 @@ func (reader *TapeReader) SyncToBlock() (RawBlockType, error) {
 type TapeWriter struct {
 	writer      io.WriteSeeker
 	wav         *wav.Encoder
+	wavBuffer   audio.IntBuffer
 	encInfo     TapeEncodingInfo
 	freqResidue float64
 }
@@ -390,29 +391,38 @@ func NewTapeWriter(writer io.WriteSeeker, encInfo TapeEncodingInfo, frequency in
 	wav := wav.NewEncoder(writer, frequency, 8, 1, 0x1)
 	tapeWriter.wav = wav
 
+	wavFormat := &audio.Format{
+		SampleRate:  frequency,
+		NumChannels: 1,
+	}
+	tapeWriter.wavBuffer.Format = wavFormat
+	tapeWriter.wavBuffer.SourceBitDepth = 8
+
 	return &tapeWriter, nil
 }
 
 func (writer *TapeWriter) WriteSilence(length float64) error {
 	samples := int(length * float64(writer.wav.SampleRate))
+	writer.wavBuffer.Data = make([]int, samples)
 	for i := 0; i < samples; i++ {
-		writer.wav.AddLE(128)
+		writer.wavBuffer.Data[i] = 128
 	}
-	return nil
+	return writer.wav.Write(&writer.wavBuffer)
 }
 
 func (writer *TapeWriter) WritePulse(length int) error {
-	samplesF := writer.freqResidue + (float64(length) * float64(writer.wav.SampleRate) / writer.encInfo.TapeFrequency())
+	samplesF := writer.freqResidue + (float64(length) / 2.0 * float64(writer.wav.SampleRate) / writer.encInfo.TapeFrequency())
 	samples := int(samplesF)
 	writer.freqResidue = samplesF - float64(samples)
 
+	writer.wavBuffer.Data = make([]int, samples*2)
 	for i := 0; i < samples; i++ {
-		writer.wav.AddLE(96)
+		writer.wavBuffer.Data[i] = 160
 	}
 	for i := 0; i < samples; i++ {
-		writer.wav.AddLE(160)
+		writer.wavBuffer.Data[samples+i] = 96
 	}
-	return nil
+	return writer.wav.Write(&writer.wavBuffer)
 }
 
 func (writer *TapeWriter) WriteBit(bit byte) error {
@@ -423,4 +433,125 @@ func (writer *TapeWriter) WriteBit(bit byte) error {
 	} else {
 		return fmt.Errorf("unknown bit: %d", bit)
 	}
+}
+
+func (writer *TapeWriter) WriteByte(v byte) error {
+	err := writer.WriteBit(1)
+	if err != nil {
+		return err
+	}
+	for i := 7; i >= 0; i-- {
+		err = writer.WriteBit((v >> i) & 1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (writer *TapeWriter) WriteBytes(buf []byte) error {
+	for _, v := range buf {
+		err := writer.WriteByte(v)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (writer *TapeWriter) WriteBytesWithChecksum(buf []byte) error {
+	err := writer.WriteBytes(buf)
+	if err != nil {
+		return err
+	}
+
+	checksum := CalcDataChecksum(buf)
+	err = writer.WriteByte((byte((checksum >> 8) & 0xFF)))
+	if err != nil {
+		return err
+	}
+	err = writer.WriteByte((byte(checksum & 0xFF)))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (writer *TapeWriter) writeSyncBlock(pulseCount int) error {
+	for i := 0; i < writer.encInfo.SyncMinPulseCount*2; i++ {
+		err := writer.WriteBit(0)
+		if err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < pulseCount; i++ {
+		err := writer.WriteBit(1)
+		if err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < pulseCount; i++ {
+		err := writer.WriteBit(0)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (writer *TapeWriter) WriteFile(file FBFile) error {
+	err := writer.writeSyncBlock(40)
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBit(1)
+	if err != nil {
+		return err
+	}
+
+	infoData, err := file.Info.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBytesWithChecksum(infoData)
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBit(1)
+	if err != nil {
+		return err
+	}
+
+	err = writer.writeSyncBlock(20)
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBit(1)
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBytesWithChecksum(file.Data)
+	if err != nil {
+		return err
+	}
+
+	err = writer.WriteBit(1)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (writer *TapeWriter) Close() error {
+	return writer.wav.Close()
 }
