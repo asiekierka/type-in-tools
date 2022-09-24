@@ -29,7 +29,7 @@ To encode, run "wav -e file.wav [binary files/directories...]".`,
 		}
 
 		if encMode {
-
+			panic(fmt.Errorf("TODO"))
 		} else {
 			if len(args) > 2 {
 				panic(fmt.Errorf("specified %d args, expected at most 2", len(args)))

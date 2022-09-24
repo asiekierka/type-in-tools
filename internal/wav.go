@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
@@ -48,7 +49,7 @@ func (info *TapeEncodingInfo) getPulseType(pulseSamples int64, sampleRate uint32
 
 	tapeFrequency := info.TapeFrequency()
 	tapePulseSamples := float32(float64(pulseSamples) * tapeFrequency / float64(sampleRate))
-	// fmt.Printf("%f\n", tapePulseSamples)
+	// fmt.Fprintf(os.Stderr, "%f\n", tapePulseSamples)
 
 	if tapePulseSamples >= (float32(info.ShortPulseWidth)/info.PulseTolerance) && tapePulseSamples <= (float32(info.ShortPulseWidth)*info.PulseTolerance) {
 		return pulseShort
@@ -244,7 +245,7 @@ func (reader *TapeReader) NextBytesWithChecksum(len int) ([]byte, uint16, error)
 func checkChecksumAndPrint(data []byte, name string, checksum uint16) {
 	actualChecksum := CalcDataChecksum(data)
 	if actualChecksum != checksum {
-		fmt.Printf("warning: block %s has invalid checksum %d != %d\n", name, checksum, actualChecksum)
+		fmt.Fprintf(os.Stderr, "warning: block %s has invalid checksum %d != %d\n", name, checksum, actualChecksum)
 	}
 }
 
@@ -326,7 +327,7 @@ func (reader *TapeReader) SyncToBlock() (RawBlockType, error) {
 			bitCount++
 		} else {
 			reader.RewindBit(bit)
-			// fmt.Printf("sync: read %d x %d\n", currentBit, bitCount)
+			// fmt.Fprintf(os.Stderr, "sync: read %d x %d\n", currentBit, bitCount)
 			switch state {
 			case 0: /* syncing */
 				if currentBit == 0 && bitCount >= reader.encInfo.SyncMinPulseCount {

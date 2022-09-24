@@ -57,7 +57,7 @@ func (i FBFileInfo) NameStr() string {
 		if c == 0x00 {
 			return s
 		} else {
-			s += ByteToString(c)
+			s += FBByteToString(c)
 		}
 	}
 	return s
