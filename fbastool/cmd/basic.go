@@ -24,7 +24,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/asiekierka/fbastool/internal"
+	"github.com/asiekierka/type-in-tools/fbastool/internal"
 	"github.com/spf13/cobra"
 )
 

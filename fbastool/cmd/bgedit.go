@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	g "github.com/AllenDang/giu"
-	"github.com/asiekierka/fbastool/internal"
+	"github.com/asiekierka/type-in-tools/fbastool/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -59,7 +59,7 @@ func bgeditLoop() {
 			bgCell.iy = iy
 			bgCell.value = nametable.GetString(bgCell.ix, bgCell.iy)
 			bgCell.widget = g.InputText(&bgCell.value).Size(100).Flags(0).OnChange(func() {
-				fmt.Printf("setting %d %d to %s\n", bgCell.ix, bgCell.iy, bgCell.value)
+				// fmt.Printf("setting %d %d to %s\n", bgCell.ix, bgCell.iy, bgCell.value)
 				nametable.PutString(bgCell.ix, bgCell.iy, strings.TrimSpace(bgCell.value))
 				bgCell.value = nametable.GetString(bgCell.ix, bgCell.iy)
 			})

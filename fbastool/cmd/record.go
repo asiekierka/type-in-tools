@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asiekierka/fbastool/internal"
+	"github.com/asiekierka/type-in-tools/fbastool/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +69,7 @@ var recordCmd = &cobra.Command{
 		if len(argName) > 0 {
 			tapeFileName = argName
 		} else {
-			if len(tapeFileName) < 13 && info.Type == internal.FileTypeBgGraphics && !strings.HasSuffix(tapeFileName, " BG") {
+			if len(tapeFileName) <= 13 && info.Type == internal.FileTypeBgGraphics && !strings.HasSuffix(tapeFileName, " BG") {
 				tapeFileName += " BG"
 			}
 		}

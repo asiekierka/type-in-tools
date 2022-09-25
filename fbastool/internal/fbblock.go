@@ -87,6 +87,9 @@ func (i FBFileInfo) NameStr() string {
 func (i *FBFileInfo) SetName(s string) {
 	v, _ := FBStringToBytes(strings.ToUpper(s))
 	copy(i.Name[:], v)
+	if len(v) < 16 {
+		i.Name[len(v)] = 0
+	}
 }
 
 func (i FBFileInfo) MarshalBinary() ([]byte, error) {

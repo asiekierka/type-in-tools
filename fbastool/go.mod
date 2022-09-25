@@ -1,4 +1,4 @@
-module github.com/asiekierka/fbastool
+module github.com/asiekierka/type-in-tools/fbastool
 
 go 1.19
 
